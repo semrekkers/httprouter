@@ -77,13 +77,14 @@
 package httprouter
 
 import (
+	"context"
 	"net/http"
 )
 
 // Handle is a function that can be registered to a route to handle HTTP
 // requests. Like http.HandlerFunc, but has a third parameter for the values of
 // wildcards (variables).
-type Handle func(http.ResponseWriter, *http.Request, Params)
+type Handle func(http.ResponseWriter, *http.Request, Params, context.Context)
 
 // Param is a single URL parameter, consisting of a key and a value.
 type Param struct {
@@ -240,7 +241,7 @@ func (r *Router) Handle(method, path string, handle Handle) {
 // request handle.
 func (r *Router) Handler(method, path string, handler http.Handler) {
 	r.Handle(method, path,
-		func(w http.ResponseWriter, req *http.Request, _ Params) {
+		func(w http.ResponseWriter, req *http.Request, _ Params, _ context.Context) {
 			handler.ServeHTTP(w, req)
 		},
 	)
@@ -269,7 +270,7 @@ func (r *Router) ServeFiles(path string, root http.FileSystem) {
 
 	fileServer := http.FileServer(root)
 
-	r.GET(path, func(w http.ResponseWriter, req *http.Request, ps Params) {
+	r.GET(path, func(w http.ResponseWriter, req *http.Request, ps Params, _ context.Context) {
 		req.URL.Path = ps.ByName("filepath")
 		fileServer.ServeHTTP(w, req)
 	})
@@ -332,7 +333,7 @@ func (r *Router) allowed(path, reqMethod string) (allow string) {
 }
 
 // ServeHTTP makes the router implement the http.Handler interface.
-func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (r *Router) ServeHTTPContext(w http.ResponseWriter, req *http.Request, ctx context.Context) {
 	if r.PanicHandler != nil {
 		defer r.recv(w, req)
 	}
@@ -341,7 +342,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	if root := r.trees[req.Method]; root != nil {
 		if handle, ps, tsr := root.getValue(path); handle != nil {
-			handle(w, req, ps)
+			handle(w, req, ps, ctx)
 			return
 		} else if req.Method != "CONNECT" && path != "/" {
 			code := 301 // Permanent redirect, request with GET method
@@ -408,4 +409,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	} else {
 		http.NotFound(w, req)
 	}
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.ServeHTTPContext(w, req, context.TODO())
 }
